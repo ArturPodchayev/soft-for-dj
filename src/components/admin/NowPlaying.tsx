@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { SongRequest } from "@/lib/songs";
 import { formatDuration } from "@/lib/formatDuration";
 import TrackQuickActions from "./TrackQuickActions";
+import DownloadStatusBadge from "./DownloadStatusBadge";
 
 export default function NowPlaying({
   playing,
@@ -59,6 +60,9 @@ export default function NowPlaying({
               </p>
               <p className="mt-1 text-lg text-brand-surface-fg/70">{playing.artist_name}</p>
               <p className="mt-2 text-sm text-brand-surface-fg/60">Заказал: {playing.requester_name}</p>
+              <div className="mt-2">
+                <DownloadStatusBadge status={playing.download_status} reason={playing.download_match_reason} />
+              </div>
             </div>
 
             <div className="flex shrink-0 flex-col items-start gap-4 sm:items-end">

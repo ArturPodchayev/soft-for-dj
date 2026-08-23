@@ -1,14 +1,19 @@
 export type SongStatus = "pending" | "approved" | "rejected" | "playing" | "played";
 
+// Module 4's pipeline (src/lib/download/pipeline.ts) writes this column as:
+// not_started (default, before approval) -> searching -> downloading ->
+// ready | needs_review | failed. 'pending'/'manual_required' are Stage 1
+// leftovers, superseded by 'searching'/'needs_review' — no code writes them
+// anymore, kept in the type only because old enum values can't be dropped.
 export type DownloadStatus =
   | "not_started"
   | "pending"
+  | "searching"
   | "downloading"
   | "ready"
+  | "needs_review"
   | "failed"
   | "manual_required";
-
-export type MatchConfidence = "confirmed" | "uncertain" | "not_found";
 
 export type SongRequest = {
   id: string;
@@ -23,7 +28,8 @@ export type SongRequest = {
   queue_position: number | null;
   download_status: DownloadStatus;
   download_source: string | null;
-  match_confidence: MatchConfidence | null;
+  download_match_reason: string | null;
+  flagged_for_review: boolean;
   drive_file_id: string | null;
   drive_file_url: string | null;
   file_name: string | null;

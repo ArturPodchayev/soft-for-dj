@@ -10,18 +10,23 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.109.0",
+    "cheerio": "^1.2.0",
+    "googleapis": "^176.0.0",
     "jose": "^6.2.8",
+    "music-metadata": "^11.15.0",
     "next": "16.2.12",
     "node-vibrant": "^4.0.4",
     "qrcode.react": "^4.2.0",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "string-similarity": "^4.0.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/string-similarity": "^4.0.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.12",
     "tailwindcss": "^4",

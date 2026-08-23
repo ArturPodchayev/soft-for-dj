@@ -1,14 +1,6 @@
-const REQUEST_TIMEOUT_MS = 8000;
+import { fetchWithTimeout } from "@/lib/http";
 
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
-}
+const REQUEST_TIMEOUT_MS = 8000;
 
 // Normalizes messy guest input — typos/abbreviations or a Cyrillic phonetic
 // spelling of a foreign title ("суперсоник" -> "Supersonic") — into a clean

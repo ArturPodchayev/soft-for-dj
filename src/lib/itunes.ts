@@ -1,17 +1,8 @@
 import { looksLikeMatch } from "@/lib/fuzzyMatch";
+import { fetchWithTimeout } from "@/lib/http";
 
 const SEARCH_URL = "https://itunes.apple.com/search";
 const REQUEST_TIMEOUT_MS = 8000;
-
-async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
-}
 
 export type ItunesTrackInfo = {
   // Only populated when the result passes looksLikeMatch against the
@@ -45,7 +36,7 @@ export async function searchItunesTrackInfo(
     // measurably skews which result iTunes ranks first, so strip it to get
     // the kind of query a human would type.
     const term = encodeURIComponent(query.replace(/ - /g, " "));
-    const res = await fetchWithTimeout(`${SEARCH_URL}?term=${term}&entity=song&limit=1`, REQUEST_TIMEOUT_MS);
+    const res = await fetchWithTimeout(`${SEARCH_URL}?term=${term}&entity=song&limit=1`, {}, REQUEST_TIMEOUT_MS);
 
     if (!res.ok) {
       console.error("iTunes search failed", { status: res.status });
