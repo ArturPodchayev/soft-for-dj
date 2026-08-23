@@ -1,0 +1,139 @@
+@import "tailwindcss";
+
+:root {
+  /* Brand color values themselves are NOT set here — they're injected as an
+     inline <style> tag in app/layout.tsx from config/venue.ts, so re-skinning
+     for a different DJ/venue is "edit that one config object," never this
+     file. The declarations below just wire Tailwind's `brand-*` utility
+     classes to whatever those inline custom properties resolve to. */
+  --card-scale: 1.175;
+  --card-text-scale: 1.33;
+  --requester-text-scale: 1.23;
+}
+
+@theme inline {
+  --color-brand-bg: var(--brand-bg);
+  --color-brand-fg: var(--brand-fg);
+  --color-brand-accent: var(--brand-accent);
+  --color-brand-accent-2: var(--brand-accent-2);
+  --color-brand-surface: var(--brand-surface);
+  --color-brand-surface-fg: var(--brand-surface-fg);
+  --font-heading: var(--font-heading);
+  --font-sans: var(--font-sans);
+}
+
+body {
+  background: var(--brand-bg);
+  color: var(--brand-fg);
+}
+
+/* /display runs unattended for hours on one screen, so every animation below
+   only ever touches `transform`/`opacity` (GPU-composited, no layout/reflow). */
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Now Playing's track-change transition — transitionVersion
+   (DisplayScreen.tsx) is the single trigger shared with the WebGL shader
+   burst and the equalizer accent burst, so all three read as one
+   coordinated event. Two keyframes, not one reversible one, because enter
+   and exit run on TWO DIFFERENT elements at once (the outgoing card fading
+   out while the incoming one fades in, grid-stacked in the same cell). */
+@keyframes card-burst-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes card-burst-exit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.05);
+  }
+}
+
+/* AmbientBackground's CSS-fallback glows (only rendered if WebGL is
+   unavailable) — fixed brand accent color, not per-track. Two glows on
+   different, out-of-phase durations read as "more than one light source"
+   rather than one pulsing shape. */
+.ambient-glow-primary {
+  animation: ambient-glow-primary 26s ease-in-out infinite;
+}
+.ambient-glow-secondary {
+  animation: ambient-glow-secondary 32s ease-in-out infinite;
+  animation-delay: -14s;
+}
+@keyframes ambient-glow-primary {
+  0% {
+    transform: translate(0%, 0%) scale(1);
+    opacity: 0.4;
+  }
+  22% {
+    transform: translate(-6%, 4%) scale(1.08);
+    opacity: 0.55;
+  }
+  48% {
+    transform: translate(3%, -5%) scale(0.94);
+    opacity: 0.35;
+  }
+  71% {
+    transform: translate(-4%, -3%) scale(1.05);
+    opacity: 0.6;
+  }
+  100% {
+    transform: translate(0%, 0%) scale(1);
+    opacity: 0.4;
+  }
+}
+@keyframes ambient-glow-secondary {
+  0% {
+    transform: translate(0%, 0%) scale(1);
+    opacity: 0.2;
+  }
+  30% {
+    transform: translate(5%, -4%) scale(1.1);
+    opacity: 0.3;
+  }
+  55% {
+    transform: translate(-3%, 6%) scale(0.9);
+    opacity: 0.18;
+  }
+  80% {
+    transform: translate(4%, 3%) scale(1.04);
+    opacity: 0.32;
+  }
+  100% {
+    transform: translate(0%, 0%) scale(1);
+    opacity: 0.2;
+  }
+}
+
+/* Now Playing "vinyl record" spin — only applied while a track is playing. */
+@keyframes vinyl-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The equalizer bars (components/display/EqualizerBars.tsx) are driven by
+   per-bar random setTimeout loops setting inline transform/transition
+   directly, not a fixed CSS @keyframes cycle — see that file. */
