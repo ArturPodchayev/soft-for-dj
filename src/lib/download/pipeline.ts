@@ -1,7 +1,6 @@
 import { parseBuffer } from "music-metadata";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { fetchWithTimeout } from "@/lib/http";
-import { getSources, SOURCE_TIMEOUT_MS } from "@/lib/download/sources";
+import { getSources } from "@/lib/download/sources";
 import {
   FUZZY_CONFIRM_THRESHOLD,
   FUZZY_REJECT_THRESHOLD,
@@ -11,12 +10,18 @@ import {
 } from "@/lib/download/match";
 import { buildFileName } from "@/lib/download/filename";
 import { uploadToDrive } from "@/lib/download/googleDrive";
-import type { SourceCandidate, SourceName } from "@/lib/download/types";
+import type { SourceAdapter, SourceCandidate, SourceName } from "@/lib/download/types";
 
 type ExpectedSong = { artist_name: string; song_title: string; duration_seconds: number | null };
 type Fallback = { source: SourceName; reason: string };
 
+// Diagnostic logging for the search/match steps — see the matching flag in
+// src/lib/download/sources/hitmo.ts for the incident this was built for and
+// why it's kept gated off rather than removed.
+const DEBUG = true;
+
 function pickBestCandidate(
+  sourceName: SourceName,
   candidates: SourceCandidate[],
   expected: ExpectedSong
 ): { candidate: SourceCandidate; score: number } | null {
@@ -26,14 +31,41 @@ function pickBestCandidate(
     // Checked before any scoring/downloading — a remix/cover/live/
     // instrumental result the guest didn't ask for is disqualified purely
     // from its title text, no fuzzy score or network request needed.
-    if (hasUnwantedVersionKeyword(expected.song_title, candidate.title)) continue;
+    if (hasUnwantedVersionKeyword(expected.song_title, candidate.title)) {
+      if (DEBUG) {
+        console.log("[pipeline-debug] candidate rejected: unwanted version keyword", {
+          source: sourceName,
+          candidateTitle: candidate.title,
+          candidateArtist: candidate.artist,
+        });
+      }
+      continue;
+    }
 
     const score = fuzzyScore(
       { artist: expected.artist_name, title: expected.song_title },
       { artist: candidate.artist, title: candidate.title }
     );
+
+    if (DEBUG) {
+      console.log("[pipeline-debug] candidate scored", {
+        source: sourceName,
+        expected: `${expected.artist_name} - ${expected.song_title}`,
+        candidate: `${candidate.artist} - ${candidate.title}`,
+        score,
+        belowRejectThreshold: score < FUZZY_REJECT_THRESHOLD,
+      });
+    }
+
     if (score < FUZZY_REJECT_THRESHOLD) continue;
     if (!best || score > best.score) best = { candidate, score };
+  }
+
+  if (DEBUG) {
+    console.log("[pipeline-debug] best candidate", {
+      source: sourceName,
+      picked: best ? { title: best.candidate.title, artist: best.candidate.artist, score: best.score } : null,
+    });
   }
 
   return best;
@@ -49,16 +81,26 @@ type ConfirmResult =
 // candidate has already cleared FUZZY_CONFIRM_THRESHOLD on title text
 // alone; this is the final check before trusting it enough to upload.
 async function tryConfirm(
-  sourceName: SourceName,
+  source: SourceAdapter,
   candidate: SourceCandidate,
   expected: ExpectedSong,
   score: number
 ): Promise<ConfirmResult> {
+  const sourceName = source.name;
+
   // Cheap pre-check on the source's own listed duration, before spending a
   // multi-MB download on a candidate that's already ruled out by it. Not a
   // substitute for the real check below (a source's listed duration is
   // occasionally wrong/stale) — just skips the network round trip when it
   // doesn't need to happen.
+  if (DEBUG) {
+    console.log("[pipeline-debug] duration pre-check (listed vs expected)", {
+      source: sourceName,
+      expectedSeconds: expected.duration_seconds,
+      listedSeconds: candidate.durationSeconds,
+    });
+  }
+
   if (
     candidate.durationSeconds != null &&
     expected.duration_seconds != null &&
@@ -70,7 +112,11 @@ async function tryConfirm(
     };
   }
 
-  const res = await fetchWithTimeout(candidate.downloadUrl, {}, SOURCE_TIMEOUT_MS);
+  // Routed through the source's own download() rather than a raw fetch —
+  // see SourceAdapter's docblock (types.ts) for why: Hitmo's file downloads
+  // need the same proxy routing as its search, or they'd hit the same
+  // Vercel-IP 403 one step later.
+  const res = await source.download(candidate.downloadUrl);
   if (!res.ok) {
     return { kind: "needs_review", reason: `${sourceName}: сходство ${score.toFixed(2)}, но файл не скачался (HTTP ${res.status})` };
   }
@@ -82,6 +128,15 @@ async function tryConfirm(
     try {
       const metadata = await parseBuffer(buffer, "audio/mpeg");
       const actualSeconds = metadata.format.duration;
+
+      if (DEBUG) {
+        console.log("[pipeline-debug] duration real check (downloaded file vs expected)", {
+          source: sourceName,
+          expectedSeconds: expected.duration_seconds,
+          actualSeconds,
+        });
+      }
+
       if (actualSeconds != null && !durationMatches(expected.duration_seconds, actualSeconds)) {
         return {
           kind: "needs_review",
@@ -134,7 +189,10 @@ export async function runDownloadPipeline(songId: string): Promise<void> {
   for (const source of getSources()) {
     try {
       const candidates = await source.search(song.artist_name, song.song_title);
-      const best = pickBestCandidate(candidates, song);
+      if (DEBUG) {
+        console.log("[pipeline-debug] source returned candidates", { source: source.name, count: candidates.length });
+      }
+      const best = pickBestCandidate(source.name, candidates, song);
 
       if (!best) {
         console.log("download-pipeline: no usable candidate", { songId, source: source.name });
@@ -151,7 +209,7 @@ export async function runDownloadPipeline(songId: string): Promise<void> {
 
       await supabase.from("song_requests").update({ download_status: "downloading" }).eq("id", songId);
 
-      const result = await tryConfirm(source.name, best.candidate, song, best.score);
+      const result = await tryConfirm(source, best.candidate, song, best.score);
 
       if (result.kind === "ready") {
         console.log("download-pipeline: confirmed, uploading to Drive", { songId, source: source.name });

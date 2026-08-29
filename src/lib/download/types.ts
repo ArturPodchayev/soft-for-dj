@@ -11,11 +11,19 @@ export type SourceCandidate = {
 
 export type SourceName = "hitmo";
 
-// One source adapter's contract: given the search query, return whatever
-// candidates it finds (already parsed off its results page), or throw. The
-// pipeline (pipeline.ts) owns timeouts/try-catch/logging around this call —
-// an adapter itself just does the scrape.
+// One source adapter's contract. search(): given the query, return whatever
+// candidates it finds (already parsed off its results page), or throw.
+// download(): fetch a confirmed candidate's downloadUrl and return the raw
+// Response — a separate method (not left to the pipeline's own generic
+// fetch) specifically so a source that needs its own routing/auth to reach
+// its files (e.g. Hitmo's Cloudflare Worker proxy, see
+// src/lib/download/sources/hitmo.ts — Vercel's egress IPs get a straight
+// 403 from Hitmo, confirmed live) can do that without leaking those details
+// into pipeline.ts, which stays source-agnostic. The pipeline owns
+// timeouts/try-catch/logging around both calls — an adapter itself just
+// does the network work.
 export type SourceAdapter = {
   name: SourceName;
   search: (artist: string, title: string) => Promise<SourceCandidate[]>;
+  download: (url: string) => Promise<Response>;
 };
