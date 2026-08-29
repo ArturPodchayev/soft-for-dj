@@ -5,6 +5,7 @@ import type { SongRequest } from "@/lib/songs";
 import { formatRelativeTime } from "@/lib/time";
 import StatusBadge from "./StatusBadge";
 import DownloadStatusBadge from "./DownloadStatusBadge";
+import SongDetailModal from "./SongDetailModal";
 
 // Same cadence as PendingFeed/QueuePanel — this view has no Realtime
 // subscription of its own (it needs pending/rejected rows too, which are
@@ -28,6 +29,7 @@ export default function AllRequestsSection() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [selectedSong, setSelectedSong] = useState<SongRequest | null>(null);
   const inFlight = useRef(false);
 
   const fetchAll = useCallback(async () => {
@@ -106,24 +108,29 @@ export default function AllRequestsSection() {
               <th className="px-4 py-3 font-bold">Статус</th>
               <th className="px-4 py-3 font-bold">Скачивание</th>
               <th className="px-4 py-3 font-bold">Создана</th>
+              <th className="px-4 py-3 font-bold">Действия</th>
             </tr>
           </thead>
           <tbody>
             {songs === null ? (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-brand-surface-fg/60">
+                <td colSpan={6} className="px-4 py-6 text-center text-brand-surface-fg/60">
                   Загрузка…
                 </td>
               </tr>
             ) : songs.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-brand-surface-fg/60">
+                <td colSpan={6} className="px-4 py-6 text-center text-brand-surface-fg/60">
                   Заявок пока нет.
                 </td>
               </tr>
             ) : (
               songs.map((song) => (
-                <tr key={song.id} className="border-b border-brand-surface-fg/5 text-brand-surface-fg">
+                <tr
+                  key={song.id}
+                  onClick={() => setSelectedSong(song)}
+                  className="cursor-pointer border-b border-brand-surface-fg/5 text-brand-surface-fg transition-colors hover:bg-brand-surface-fg/5"
+                >
                   <td className="max-w-[240px] px-4 py-2.5">
                     <p className="truncate font-medium">{song.song_title}</p>
                     <p className="truncate text-xs text-brand-surface-fg/60">{song.artist_name}</p>
@@ -144,6 +151,15 @@ export default function AllRequestsSection() {
                   </td>
                   <td className="whitespace-nowrap px-4 py-2.5 text-brand-surface-fg/70">
                     {formatRelativeTime(song.submitted_at)}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSong(song)}
+                      className="rounded-full bg-brand-surface-fg px-3 py-1 text-xs font-bold uppercase tracking-wide text-brand-surface transition-opacity hover:opacity-90"
+                    >
+                      Подробнее
+                    </button>
                   </td>
                 </tr>
               ))
@@ -186,6 +202,10 @@ export default function AllRequestsSection() {
         <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded-full bg-brand-surface-fg px-5 py-3 text-sm font-medium text-brand-surface shadow-xl">
           {toast}
         </div>
+      )}
+
+      {selectedSong && (
+        <SongDetailModal song={selectedSong} onClose={() => setSelectedSong(null)} onSaved={fetchAll} />
       )}
     </section>
   );
