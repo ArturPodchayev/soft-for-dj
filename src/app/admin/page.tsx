@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
-import AdminHeader from "@/components/admin/AdminHeader";
-import QueuePanel from "@/components/admin/QueuePanel";
-import PendingFeed from "@/components/admin/PendingFeed";
+import AdminTabsView from "@/components/admin/AdminTabsView";
 import { VENUE } from "@/config/venue";
 
 export const metadata: Metadata = {
@@ -9,11 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function AdminPage() {
-  return (
-    <>
-      <AdminHeader />
-      <QueuePanel />
-      <PendingFeed />
-    </>
-  );
+  return <AdminTabsView />;
 }
