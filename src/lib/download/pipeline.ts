@@ -18,7 +18,7 @@ type Fallback = { source: SourceName; reason: string };
 // Diagnostic logging for the search/match steps — see the matching flag in
 // src/lib/download/sources/hitmo.ts for the incident this was built for and
 // why it's kept gated off rather than removed.
-const DEBUG = true;
+const DEBUG = false;
 
 function pickBestCandidate(
   sourceName: SourceName,

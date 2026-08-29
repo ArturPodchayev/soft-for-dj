@@ -62,7 +62,7 @@ function resolveFetchTarget(absoluteHitmoUrl: string): { url: string; headers: R
 // logging) — left in place, gated off, rather than ripped out, since a
 // future "why is Hitmo failing again" session gets the exact same value
 // from it. Flip back to true (redeploy) if that ever comes up again.
-const DEBUG = true;
+const DEBUG = false;
 
 // Retries a transient-looking failure — confirmed live: the *identical*
 // request through the *same* Cloudflare Worker flipped between 200 (real
