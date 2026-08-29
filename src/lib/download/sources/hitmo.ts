@@ -32,11 +32,22 @@ const BROWSER_HEADERS: Record<string, string> = {
 // with the full browser header set above (confirmed live) — an IP-range
 // block, not a "doesn't look like a browser" block. HITMO_PROXY_URL, when
 // set, points at a Cloudflare Worker (see cloudflare-worker/hitmo-proxy.js)
-// that reverse-proxies to eu.hitmoz.com, so the request actually leaves
-// from Cloudflare's network instead of Vercel's. Both the search request
-// AND the eventual mp3 download (download() below) have to go through
-// this — fixing only the search and leaving the download hitting
-// eu.hitmoz.com directly would just move the 403 one step later.
+// that reverse-proxies to eu.hitmoz.com, so the request leaves from
+// Cloudflare's network instead of Vercel's. Both the search request AND
+// the eventual mp3 download (download() below) have to go through this —
+// fixing only the search and leaving the download hitting eu.hitmoz.com
+// directly would just move the 403 one step later.
+//
+// STATUS (confirmed live, see src/lib/download/sources/index.ts for the
+// full writeup): the proxy still gets a real 403 from Hitmo, consistently,
+// from the one Cloudflare colo Vercel's requests happen to route through.
+// A header-leak fix (stopped blanket-forwarding Cloudflare's own
+// CF-Connecting-IP etc. to the origin) did NOT clear it either — this
+// looks like a durable block on that colo's egress IPs specifically, not
+// something fixable from this side. Left wired up (not ripped out) since
+// it's free to keep trying and costs nothing but background compute time
+// if Hitmo's block ever lifts on its own.
+//
 // Unconfigured (e.g. local dev, where the direct request already works
 // fine) falls straight through to the real origin.
 function resolveFetchTarget(absoluteHitmoUrl: string): { url: string; headers: Record<string, string> } {
@@ -54,14 +65,14 @@ function resolveFetchTarget(absoluteHitmoUrl: string): { url: string; headers: R
   };
 }
 
-// TEMP DEBUG — diagnosing the "Flashing Lights / Kanye West" prod false
-// negative — root-caused to Vercel's egress IP getting a straight 403 from
-// Hitmo (see resolveFetchTarget's docblock) plus a self-inflicted Hitmo
-// rate-limit from repeated live testing during that diagnosis. Fix
-// confirmed working (proxy routing + retry both verified correct via this
-// logging) — left in place, gated off, rather than ripped out, since a
-// future "why is Hitmo failing again" session gets the exact same value
-// from it. Flip back to true (redeploy) if that ever comes up again.
+// Diagnostic logging for the "Flashing Lights / Kanye West" investigation
+// — see resolveFetchTarget's STATUS note and
+// src/lib/download/sources/index.ts for the full conclusion. Left in
+// place, gated off, rather than ripped out: proxy routing, retry, and the
+// secret handshake are all confirmed correct via this logging, so a future
+// "why is Hitmo failing again" session (e.g. checking whether Hitmo's
+// block ever lifted) gets straight to real data instead of re-deriving all
+// of this. Flip back to true (redeploy) if that ever comes up again.
 const DEBUG = false;
 
 // Retries a transient-looking failure — confirmed live: the *identical*
