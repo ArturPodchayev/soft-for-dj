@@ -5,15 +5,15 @@ import type { DisplayQueue } from "@/lib/displayQueue";
 
 // advance_playing_track() (supabase/migrations/0001_init.sql) already makes
 // the "old track -> played, new track -> playing" transition atomic, and
-// /display reacts to it via Realtime rather than polling — but this stays
-// cheap insurance against any other source of a transient "nothing
-// playing" read (a Realtime event landing between two rapid admin actions,
-// a reconnect after a dropped WebSocket). A read catching a real gap should
-// never be trusted immediately if there's reason to believe a track is
-// still or about to be playing.
+// every screen that uses this reacts via Realtime rather than polling —
+// but this stays cheap insurance against any other source of a transient
+// "nothing playing" read (a Realtime event landing between two rapid admin
+// actions, a reconnect after a dropped WebSocket). A read catching a real
+// gap should never be trusted immediately if there's reason to believe a
+// track is still or about to be playing.
 //
 // Two rules, applied to the raw fetched DisplayQueue before anything else
-// in DisplayScreen reads it:
+// reads it:
 //
 // 1. raw.playing === null but raw.next !== null: a track hasn't been
 //    promoted to 'playing' yet, but something is clearly queued to become

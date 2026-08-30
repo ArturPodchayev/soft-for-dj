@@ -1,17 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { createBrowserClient } from "@/lib/supabase/client";
-import { fetchDisplayQueue, type DisplayQueue, type DisplaySong } from "@/lib/displayQueue";
+import type { DisplayQueue, DisplaySong } from "@/lib/displayQueue";
+import { useRealtimeDisplayQueue } from "@/lib/useRealtimeDisplayQueue";
 import { getSongThumbnailUrl } from "@/lib/albumArt";
 import { VENUE } from "@/config/venue";
 import DisplayCard from "./DisplayCard";
 import AmbientBackgroundGL from "./AmbientBackgroundGL";
 import { useAlbumPalette } from "./useAlbumPalette";
-import { useVerifiedThumbnailUrl } from "./useVerifiedThumbnail";
-import { useAntiFlickerQueue } from "./useAntiFlickerQueue";
+import { useVerifiedThumbnailUrl } from "@/lib/useVerifiedThumbnail";
 
 // Now Playing's exit animation duration (see card-burst-exit in
 // globals.css) — kept as one constant here so the snapshot-cleanup timeout
@@ -36,61 +34,10 @@ export default function DisplayScreen({
   submitUrl: string;
   initialData: DisplayQueue;
 }) {
-  const [rawData, setRawData] = useState<DisplayQueue>(initialData);
-  // Created lazily in the Realtime-subscription effect below, not via a
-  // useRef initializer — that runs during render, including the server's
-  // initial render of this client component, and createBrowserClient()
-  // throws synchronously if the Supabase env vars aren't set. Deferring to
-  // an effect keeps that failure client-only, where it belongs.
-  const supabaseRef = useRef<SupabaseClient | null>(null);
-  const inFlight = useRef(false);
-  const requestId = useRef(0);
-
-  const refresh = useCallback(async () => {
-    if (inFlight.current || !supabaseRef.current) return;
-    inFlight.current = true;
-    const thisRequestId = ++requestId.current;
-    try {
-      const data = await fetchDisplayQueue(supabaseRef.current);
-      if (thisRequestId === requestId.current) {
-        setRawData(data);
-      }
-    } catch {
-      // Keep showing the last known state — the next change event will retry.
-    } finally {
-      inFlight.current = false;
-    }
-  }, []);
-
-  // Realtime, not polling (per this project's brief): subscribes to every
-  // change on song_requests — RLS still governs what the anon client
-  // actually receives (see supabase/migrations/0001_init.sql's select
-  // policy), so a still-pending row's change is never delivered here. Any
-  // delivered event just triggers a re-run of the single shared query
-  // (fetchDisplayQueue) rather than trying to apply the raw payload
-  // incrementally — that's what keeps "what's playing/next" computed
-  // exactly one way everywhere it's read (see lib/queue.ts's
-  // orderApprovedQueue docblock for why that discipline matters here).
-  useEffect(() => {
-    const supabase = supabaseRef.current ?? createBrowserClient();
-    supabaseRef.current = supabase;
-    const channel = supabase
-      .channel("song_requests-changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "song_requests" }, () => {
-        refresh();
-      })
-      .subscribe();
-
-    refresh();
-
-    return () => {
-      requestId.current += 1;
-      supabase.removeChannel(channel);
-    };
-  }, [refresh]);
-
-  // Everything below this line reads `data`, never `rawData` directly.
-  const data = useAntiFlickerQueue(rawData);
+  // Realtime subscription + anti-flicker — shared with /dj-view (see
+  // lib/useRealtimeDisplayQueue.ts) so the two screens can never disagree
+  // on how "what's playing/next" is fetched or debounced.
+  const data = useRealtimeDisplayQueue(initialData);
 
   // Uniform fit-to-viewport factor for the fixed DESIGN_WIDTH x
   // DESIGN_HEIGHT stage below. Math.min (not separate x/y factors) keeps

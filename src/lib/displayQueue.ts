@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAnonServerClient } from "@/lib/supabase/server";
 import { orderApprovedQueue } from "@/lib/queue";
+import type { DownloadStatus } from "@/lib/songs";
 
 export type DisplaySong = {
   song_title: string;
@@ -8,6 +9,11 @@ export type DisplaySong = {
   requester_name: string;
   youtube_url: string | null;
   album_art_url: string | null;
+  // Unused by /display (the projector never shows it) — included here
+  // because /dj-view needs it to derive a plain ready/not-ready signal for
+  // the next track (see DjView.tsx), and this query is the one shared
+  // source of truth for "what's playing/next" both screens read from.
+  download_status: DownloadStatus;
 };
 
 export type DisplayQueue = {
@@ -15,7 +21,7 @@ export type DisplayQueue = {
   next: DisplaySong | null;
 };
 
-const DISPLAY_COLUMNS = "song_title, artist_name, requester_name, youtube_url, album_art_url";
+const DISPLAY_COLUMNS = "song_title, artist_name, requester_name, youtube_url, album_art_url, download_status";
 
 // Shared by the server-rendered first paint of /display (getDisplayQueue
 // below, so the very first frame already shows the real state instead of an

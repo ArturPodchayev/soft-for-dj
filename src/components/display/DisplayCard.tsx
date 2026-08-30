@@ -5,7 +5,7 @@ import { getSongThumbnailUrl } from "@/lib/albumArt";
 import type { DisplaySong } from "@/lib/displayQueue";
 import VinylDisc from "./VinylDisc";
 import EqualizerBars from "./EqualizerBars";
-import { useVerifiedThumbnailUrl } from "./useVerifiedThumbnail";
+import { useVerifiedThumbnailUrl } from "@/lib/useVerifiedThumbnail";
 
 export default function DisplayCard({
   label,

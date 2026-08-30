@@ -39,7 +39,8 @@ function safeInitialUrl(candidateUrl: string | null): string | null {
 // 404. This hook re-derives the same video's tier list from the URL and
 // probes maxres -> sd in the background, only ever rendering hqdefault.jpg
 // until a higher tier is confirmed real — so the visible thumbnail never
-// shows YouTube's gray placeholder.
+// shows YouTube's gray placeholder. Shared by every screen that renders a
+// track thumbnail (the projector display, the DJ view).
 export function useVerifiedThumbnailUrl(candidateUrl: string | null): string | null {
   const [trackedCandidate, setTrackedCandidate] = useState(candidateUrl);
   const [resolvedUrl, setResolvedUrl] = useState(() => safeInitialUrl(candidateUrl));
