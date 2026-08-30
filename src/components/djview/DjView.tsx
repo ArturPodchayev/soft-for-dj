@@ -1,10 +1,18 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import type { DisplayQueue } from "@/lib/displayQueue";
 import { useRealtimeDisplayQueue } from "@/lib/useRealtimeDisplayQueue";
 import { useVerifiedThumbnailUrl } from "@/lib/useVerifiedThumbnail";
 import { getSongThumbnailUrl } from "@/lib/albumArt";
+
+// Upper bound on how long "Переключаем…" stays disabled after a tap, in
+// case Realtime never delivers a confirming update (a dropped WebSocket,
+// the RPC silently no-op'ing on a race — see queueActions.ts's "race"
+// outcome). The button re-enables the instant real data arrives regardless
+// (see the effect below) — this is only the fallback for when it doesn't.
+const ADVANCE_TIMEOUT_MS = 5000;
 
 // The DJ's working screen (TZ Module 5) — sits next to Serato on the same
 // laptop, either a narrow window or full-screen on a phone/tablet propped
@@ -30,6 +38,45 @@ export default function DjView({ initialData }: { initialData: DisplayQueue }) {
   // not ready yet). flagged_for_review, error reasons, etc. are an
   // admin/moderator concern (see DownloadStatusBadge), not this screen's.
   const nextReady = data.next?.download_status === "ready";
+
+  // Disabled the instant a tap fires, re-enabled the instant Realtime
+  // delivers ANY change to what's playing/next (not necessarily caused by
+  // this tap — any fresh read means the button's stale-data concern is
+  // resolved either way), or after ADVANCE_TIMEOUT_MS, whichever comes
+  // first. That's what stops a fast double-tap from firing the RPC twice
+  // before the first call's effect is visible on screen (requirement: no
+  // confirmation dialog, so this debounce is the only guard).
+  const [advancing, setAdvancing] = useState(false);
+  const stateKey = `${data.playing?.song_title ?? ""}::${data.playing?.artist_name ?? ""}|${data.next?.song_title ?? ""}::${data.next?.artist_name ?? ""}`;
+  const prevStateKeyRef = useRef(stateKey);
+
+  useEffect(() => {
+    if (advancing && stateKey !== prevStateKeyRef.current) {
+      setAdvancing(false);
+    }
+    prevStateKeyRef.current = stateKey;
+  }, [stateKey, advancing]);
+
+  useEffect(() => {
+    if (!advancing) return;
+    const timeout = setTimeout(() => setAdvancing(false), ADVANCE_TIMEOUT_MS);
+    return () => clearTimeout(timeout);
+  }, [advancing]);
+
+  async function handleAdvance() {
+    // No next track: nothing to advance TO — advance_playing_track(null)
+    // would still atomically retire the current track with nothing to
+    // replace it, which is a real, valid RPC call, but not what an empty
+    // queue's disabled button should ever trigger (see the brief).
+    if (!data.next || advancing) return;
+    setAdvancing(true);
+    try {
+      await fetch("/api/admin/queue/next", { method: "POST" });
+    } catch {
+      // Realtime (or the timeout above) reconciles the button regardless
+      // of a network hiccup on this particular request.
+    }
+  }
 
   return (
     <div className="flex min-h-screen flex-col justify-center gap-8 bg-black px-5 py-10 text-white sm:gap-12 sm:px-12">
@@ -80,6 +127,25 @@ export default function DjView({ initialData }: { initialData: DisplayQueue }) {
           <p className="mt-4 text-xl text-white/50 sm:mt-6 sm:text-3xl">Очередь пуста</p>
         )}
       </section>
+
+      {/* Deliberately always enabled regardless of nextReady (🟢/🔴) — a
+          DJ choosing to cue up a not-yet-downloaded track is their call,
+          not something to block here. Only two things disable it: no next
+          track to advance to at all (data.next null), or the brief window
+          right after a tap while waiting for Realtime to confirm it (see
+          the advancing state above) — both covered by the same
+          `disabled` expression, no separate visual treatment needed since
+          the label text already says which one it is. */}
+      <button
+        type="button"
+        onClick={handleAdvance}
+        disabled={!data.next || advancing}
+        className={`w-full rounded-3xl py-6 text-2xl font-bold uppercase tracking-wide transition-all sm:py-8 sm:text-4xl ${
+          advancing ? "scale-[0.98] bg-white/20 text-white/50" : "bg-white text-black active:scale-[0.98] disabled:bg-white/10 disabled:text-white/30"
+        }`}
+      >
+        {advancing ? "Переключаем…" : data.next ? "Переключить" : "Очередь пуста"}
+      </button>
     </div>
   );
 }
