@@ -14,6 +14,16 @@ import { getSongThumbnailUrl } from "@/lib/albumArt";
 // (see the effect below) — this is only the fallback for when it doesn't.
 const ADVANCE_TIMEOUT_MS = 5000;
 
+// MM:SS, always non-negative — "00:00" once the track has run past its known
+// duration rather than counting into the negatives (a DJ reads "00:00" as
+// "should be wrapping up," not as a bug).
+function formatCountdown(seconds: number): string {
+  const clamped = Math.max(0, Math.round(seconds));
+  const mm = Math.floor(clamped / 60);
+  const ss = clamped % 60;
+  return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+}
+
 // The DJ's working screen (TZ Module 5) — sits next to Serato on the same
 // laptop, either a narrow window or full-screen on a phone/tablet propped
 // beside the controller. Deliberately NOT built like /display
@@ -38,6 +48,37 @@ export default function DjView({ initialData }: { initialData: DisplayQueue }) {
   // not ready yet). flagged_for_review, error reasons, etc. are an
   // admin/moderator concern (see DownloadStatusBadge), not this screen's.
   const nextReady = data.next?.download_status === "ready";
+
+  // Countdown to the end of the current track. Ticks locally on a plain
+  // setInterval — NOT re-derived from Realtime on every second, since
+  // Realtime only ever fires on an actual row change (a new track starting),
+  // which lands here as new started_playing_at/duration_seconds and simply
+  // restarts the effect below. Date.now() is only ever read inside a
+  // setInterval/setTimeout callback, never during render or synchronously in
+  // the effect body itself — react-hooks' purity rule forbids the former
+  // (render must be a pure function of props/state) and its
+  // set-state-in-effect rule forbids the latter (a setState call that isn't
+  // inside some callback-from-an-external-system is a cascading-render risk)
+  // — so even the "reset to null" branch below fires from a deferred
+  // setTimeout(…, 0), not a direct call.
+  const playingStartedAt = data.playing?.started_playing_at ?? null;
+  const playingDuration = data.playing?.duration_seconds ?? null;
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!playingStartedAt || playingDuration == null) {
+      const id = setTimeout(() => setRemainingSeconds(null), 0);
+      return () => clearTimeout(id);
+    }
+    const startedMs = new Date(playingStartedAt).getTime();
+    const tick = () => setRemainingSeconds(playingDuration - (Date.now() - startedMs) / 1000);
+    const interval = setInterval(tick, 1000);
+    const initial = setTimeout(tick, 0);
+    return () => {
+      clearInterval(interval);
+      clearTimeout(initial);
+    };
+  }, [playingStartedAt, playingDuration]);
 
   // Disabled the instant a tap fires, re-enabled the instant Realtime
   // delivers ANY change to what's playing/next (not necessarily caused by
@@ -81,7 +122,15 @@ export default function DjView({ initialData }: { initialData: DisplayQueue }) {
   return (
     <div className="flex min-h-screen flex-col justify-center gap-8 bg-black px-5 py-10 text-white sm:gap-12 sm:px-12">
       <section>
-        <p className="text-sm font-bold uppercase tracking-[0.2em] text-white/40 sm:text-base">Сейчас играет</p>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-bold uppercase tracking-[0.2em] text-white/40 sm:text-base">Сейчас играет</p>
+
+          {remainingSeconds !== null && (
+            <span className="rounded-full bg-white/10 px-3 py-1.5 font-mono text-lg font-bold tabular-nums text-white sm:px-4 sm:py-2 sm:text-2xl">
+              {formatCountdown(remainingSeconds)}
+            </span>
+          )}
+        </div>
 
         {data.playing ? (
           <div className="mt-4 flex items-center gap-5 sm:mt-6 sm:gap-8">

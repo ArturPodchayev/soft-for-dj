@@ -14,6 +14,11 @@ export type DisplaySong = {
   // the next track (see DjView.tsx), and this query is the one shared
   // source of truth for "what's playing/next" both screens read from.
   download_status: DownloadStatus;
+  // Also /dj-view-only (its countdown timer, DjView.tsx) — null whenever
+  // `song` is /display's "next" row (started_playing_at is only ever set on
+  // the 'playing' row) or duration_seconds was never resolved for this track.
+  started_playing_at: string | null;
+  duration_seconds: number | null;
 };
 
 export type DisplayQueue = {
@@ -21,7 +26,8 @@ export type DisplayQueue = {
   next: DisplaySong | null;
 };
 
-const DISPLAY_COLUMNS = "song_title, artist_name, requester_name, youtube_url, album_art_url, download_status";
+const DISPLAY_COLUMNS =
+  "song_title, artist_name, requester_name, youtube_url, album_art_url, download_status, started_playing_at, duration_seconds";
 
 // Shared by the server-rendered first paint of /display (getDisplayQueue
 // below, so the very first frame already shows the real state instead of an

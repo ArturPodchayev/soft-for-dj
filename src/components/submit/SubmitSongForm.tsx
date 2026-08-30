@@ -7,13 +7,26 @@ type FieldErrors = Record<string, string>;
 
 const PHONE_COUNTRY_CODE = "+998";
 
+// "rejected" happens when the phone number trips the fake-number heuristic
+// server-side — same terminal, no-retry screen shape as "success", just
+// without implying the request will actually be played.
+export type SubmitOutcome = "success" | "rejected" | null;
+
 function formatPhoneDigits(digits: string): string {
   return [digits.slice(0, 2), digits.slice(2, 5), digits.slice(5, 7), digits.slice(7, 9)]
     .filter(Boolean)
     .join(" ");
 }
 
-export default function SubmitSongForm() {
+export default function SubmitSongForm({
+  onOutcomeChange,
+}: {
+  // SubmitScreen (the client boundary one level up) mirrors this outcome to
+  // decide whether the page header is still shown — see its docblock. Kept
+  // optional so this component still works standalone if ever reused
+  // without that wrapper.
+  onOutcomeChange?: (outcome: SubmitOutcome) => void;
+}) {
   const [requesterName, setRequesterName] = useState("");
   const [songTitle, setSongTitle] = useState("");
   const [artistName, setArtistName] = useState("");
@@ -21,12 +34,13 @@ export default function SubmitSongForm() {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  // "rejected" happens when the phone number trips the fake-number
-  // heuristic server-side — same terminal, no-retry screen shape as
-  // "success", just without implying the request will actually be played.
   // Deliberately never distinguished from a real submission failure in a
   // way that would hint the phone number was the issue.
-  const [outcome, setOutcome] = useState<"success" | "rejected" | null>(null);
+  const [outcome, setOutcomeState] = useState<SubmitOutcome>(null);
+  function setOutcome(next: SubmitOutcome) {
+    setOutcomeState(next);
+    onOutcomeChange?.(next);
+  }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
