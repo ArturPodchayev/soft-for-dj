@@ -1,0 +1,6 @@
+# Real credentials + laptop-specific path — never committed, see README.md
+config.json
+
+node_modules
+dist
+*.tsbuildinfo

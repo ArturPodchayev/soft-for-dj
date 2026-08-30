@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "types": ["node"],
+    // Points at the SAME files the Next.js app imports under this alias
+    // (../src/lib/download/{match,filename}.ts, ../src/lib/http.ts,
+    // ../src/lib/download/sources/{types,hitmo}.ts) — real imports, not
+    // copies, so a fix to the matching/verification logic in one place
+    // never has to be remembered in two. See README.md's "what's shared vs
+    // ported" section.
+    "paths": {
+      "@/*": ["../src/*"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

@@ -67,13 +67,18 @@ function resolveFetchTarget(absoluteHitmoUrl: string): { url: string; headers: R
 
 // Diagnostic logging for the "Flashing Lights / Kanye West" investigation
 // — see resolveFetchTarget's STATUS note and
-// src/lib/download/sources/index.ts for the full conclusion. Left in
-// place, gated off, rather than ripped out: proxy routing, retry, and the
-// secret handshake are all confirmed correct via this logging, so a future
-// "why is Hitmo failing again" session (e.g. checking whether Hitmo's
-// block ever lifted) gets straight to real data instead of re-deriving all
-// of this. Flip back to true (redeploy) if that ever comes up again.
-const DEBUG = false;
+// src/lib/download/sources/index.ts for the full conclusion. Kept as a
+// per-call parameter (threaded through search()/download()/fetchWithRetry()
+// below) rather than the hardcoded module constant this used to be, and
+// rather than ripped out entirely: proxy routing, retry, and the secret
+// handshake are all confirmed correct via this logging, so a future "why is
+// Hitmo failing again" session (e.g. checking whether Hitmo's block ever
+// lifted) gets straight to real data instead of re-deriving all of this.
+// getSources() (src/lib/download/sources/index.ts) still passes false —
+// Vercel's behavior is byte-for-byte unchanged from commit 83b66de, which
+// disabled this. agent/src/pipeline.ts (the local download agent, see
+// agent/README.md) passes true instead: it runs on the DJ's own laptop
+// console, not somewhere logs are awkward to reach mid-event.
 
 // Retries a transient-looking failure — confirmed live: the *identical*
 // request through the *same* Cloudflare Worker flipped between 200 (real
@@ -93,12 +98,17 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchWithRetry(url: string, headers: Record<string, string>, timeoutMs: number): Promise<Response> {
+async function fetchWithRetry(
+  url: string,
+  headers: Record<string, string>,
+  timeoutMs: number,
+  debug: boolean
+): Promise<Response> {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const res = await fetchWithTimeout(url, { headers }, timeoutMs);
     const willRetry = !res.ok && RETRYABLE_STATUSES.has(res.status) && attempt < MAX_ATTEMPTS;
 
-    if (DEBUG && !res.ok) {
+    if (debug && !res.ok) {
       console.log("[hitmo-debug] non-ok response", { attempt, status: res.status, willRetry });
     }
 
@@ -116,11 +126,11 @@ function parseDuration(text: string): number | null {
   return Number(match[1]) * 60 + Number(match[2]);
 }
 
-async function search(artist: string, title: string, timeoutMs: number): Promise<SourceCandidate[]> {
+async function search(artist: string, title: string, timeoutMs: number, debug: boolean): Promise<SourceCandidate[]> {
   const query = encodeURIComponent(`${artist} ${title}`);
   const { url: fetchUrl, headers } = resolveFetchTarget(`${SEARCH_URL}?q=${query}`);
 
-  if (DEBUG) {
+  if (debug) {
     const sentSecret = headers["X-Proxy-Secret"];
     console.log("[hitmo-debug] request", {
       url: fetchUrl,
@@ -135,9 +145,9 @@ async function search(artist: string, title: string, timeoutMs: number): Promise
     });
   }
 
-  const res = await fetchWithRetry(fetchUrl, headers, timeoutMs);
+  const res = await fetchWithRetry(fetchUrl, headers, timeoutMs, debug);
 
-  if (DEBUG) {
+  if (debug) {
     console.log("[hitmo-debug] response headers", {
       status: res.status,
       contentType: res.headers.get("content-type"),
@@ -156,7 +166,7 @@ async function search(artist: string, title: string, timeoutMs: number): Promise
   // own server/cf-ray headers to both).
   const html = await res.text();
 
-  if (DEBUG) {
+  if (debug) {
     console.log("[hitmo-debug] response body", { length: html.length, first500: html.slice(0, 500) });
   }
 
@@ -167,7 +177,7 @@ async function search(artist: string, title: string, timeoutMs: number): Promise
   const $ = cheerio.load(html);
 
   const rawItems = $("ul.tracks__list > li.tracks__item");
-  if (DEBUG) {
+  if (debug) {
     console.log("[hitmo-debug] raw <li> matches", { count: rawItems.length });
   }
 
@@ -185,7 +195,7 @@ async function search(artist: string, title: string, timeoutMs: number): Promise
     const downloadHref = item.find("a.track__download-btn").first().attr("href");
 
     if (!candidateTitle || !candidateArtist || !downloadHref) {
-      if (DEBUG) {
+      if (debug) {
         console.log("[hitmo-debug] skipped raw item (missing title/artist/href)", {
           candidateTitle,
           candidateArtist,
@@ -203,7 +213,7 @@ async function search(artist: string, title: string, timeoutMs: number): Promise
     });
   });
 
-  if (DEBUG) {
+  if (debug) {
     console.log("[hitmo-debug] parsed candidates", {
       count: candidates.length,
       candidates: candidates.map((c) => ({ title: c.title, artist: c.artist, durationSeconds: c.durationSeconds })),
@@ -213,20 +223,24 @@ async function search(artist: string, title: string, timeoutMs: number): Promise
   return candidates;
 }
 
-async function download(url: string, timeoutMs: number): Promise<Response> {
+async function download(url: string, timeoutMs: number, debug: boolean): Promise<Response> {
   const { url: fetchUrl, headers } = resolveFetchTarget(url);
 
-  if (DEBUG) {
+  if (debug) {
     console.log("[hitmo-debug] download request", { url: fetchUrl, viaProxy: Boolean(process.env.HITMO_PROXY_URL) });
   }
 
-  return fetchWithRetry(fetchUrl, headers, timeoutMs);
+  return fetchWithRetry(fetchUrl, headers, timeoutMs, debug);
 }
 
-export function createHitmoAdapter(timeoutMs: number): SourceAdapter {
+// debug defaults to false so every existing caller (getSources() below,
+// used by the Vercel-deployed pipeline) keeps commit 83b66de's
+// logs-off behavior with zero change — only agent/src/pipeline.ts passes
+// true explicitly.
+export function createHitmoAdapter(timeoutMs: number, debug = false): SourceAdapter {
   return {
     name: "hitmo",
-    search: (artist, title) => search(artist, title, timeoutMs),
-    download: (url) => download(url, timeoutMs),
+    search: (artist, title) => search(artist, title, timeoutMs, debug),
+    download: (url) => download(url, timeoutMs, debug),
   };
 }

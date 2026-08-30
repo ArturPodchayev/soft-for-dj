@@ -1,0 +1,29 @@
+{
+  "name": "dj-party-local-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local download agent for DJ Party 2.0 — runs on the DJ's own laptop to work around Hitmo's datacenter-IP block. See README.md.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "dev": "npm run bundle && node dist/bundle.cjs",
+    "bundle": "node esbuild.config.mjs",
+    "package:win": "pkg dist/bundle.cjs --target node20-win-x64 --output dist/DJPartyAgent-win.exe",
+    "package:mac-x64": "pkg dist/bundle.cjs --target node20-macos-x64 --output dist/DJPartyAgent-mac-x64",
+    "package:mac-arm64": "pkg dist/bundle.cjs --target node20-macos-arm64 --output dist/DJPartyAgent-mac-arm64",
+    "package": "npm run package:win && npm run package:mac-x64 && npm run package:mac-arm64",
+    "build": "npm run typecheck && npm run bundle && npm run package"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.109.0",
+    "cheerio": "^1.2.0",
+    "music-metadata": "^11.15.0",
+    "string-similarity": "^4.0.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/string-similarity": "^4.0.2",
+    "@yao-pkg/pkg": "^5.15.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5"
+  }
+}

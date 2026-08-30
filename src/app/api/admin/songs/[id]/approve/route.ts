@@ -1,22 +1,17 @@
-import { NextRequest, NextResponse, after } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { nextQueuePosition } from "@/lib/queue";
 import { searchItunesTrackInfo } from "@/lib/itunes";
 import { normalizeSongQuery } from "@/lib/deepseek";
-import { runDownloadPipeline } from "@/lib/download/pipeline";
 
-// Module 4's autosearch/download pipeline (see runDownloadPipeline) runs
-// entirely inside after() below, so its time counts against this route's
-// own execution — Vercel keeps the function alive until after() finishes or
-// this limit is hit. Next.js requires this export to be a literal (it's
-// statically analyzed, not evaluated), so it can't be derived from
-// SOURCE_TIMEOUT_MS (src/lib/download/sources/index.ts) directly — keep the
-// two in sync by hand if that constant changes. 38s = one source's 8s
-// timeout, worst case, plus real download + Drive upload overhead, with
-// headroom below Vercel Hobby's 60s ceiling (not butted up against it — a
-// single slow step anywhere shouldn't be able to cut the request off
-// mid-write). Revisit if more sources are added.
-export const maxDuration = 38;
+// NOTE: this route used to also import `after` (next/server) and
+// runDownloadPipeline (@/lib/download/pipeline) to trigger Module 4's
+// search/verify/upload pipeline right after approval — see the DEPRECATED
+// comment below (where that call used to be) for why that's disabled now,
+// and a `maxDuration` export here (it existed specifically to give that
+// background work Vercel execution time beyond the response). Everything
+// this route does now is a single fast Postgres round trip — no export
+// needed for that.
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -88,14 +83,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ message: "Заявка больше не на модерации" }, { status: 409 });
     }
 
-    // Runs after this response has been sent to the moderator — Module 4's
-    // search/verify/upload pipeline (see runDownloadPipeline) is the slow
-    // part of approving a request and must never make the moderator wait
-    // on it. Errors are caught inside the pipeline itself (each stage logs
-    // and falls back to 'needs_review'/'failed' rather than throwing), so
-    // nothing here needs its own .catch — but one is kept as a last-resort
-    // net in case the pipeline throws before reaching its own try/catch.
-    after(() => runDownloadPipeline(id).catch((err) => console.error("download-pipeline: uncaught error", { id, message: err instanceof Error ? err.message : String(err) })));
+    // DEPRECATED (2026-08-31, confirmed with the user): this used to trigger
+    // Module 4's search/verify/upload pipeline (runDownloadPipeline) here via
+    // next/server's after(), right after approval. Left disabled, not
+    // deleted — runDownloadPipeline/googleDrive.ts/the Cloudflare Worker
+    // proxy all still exist, just unused now. Reason: Hitmo durably blocks
+    // Vercel's egress IPs (see sources/index.ts's 2026-08-30 writeup) but not
+    // an ordinary residential IP, so the download step moved to a local
+    // agent (agent/) running on the DJ's own laptop — it picks up newly
+    // 'approved' rows via Supabase Realtime (see agent/src/pipeline.ts)
+    // instead of being triggered from this route. Re-enabling this call
+    // would race the agent: both would try to own the same row's
+    // download_status, and the server pipeline losing that race would
+    // overwrite a real 'ready' (file already sitting in the DJ's Watch
+    // Folder) back to 'needs_review'/'failed'. download_status: 'searching'
+    // above still happens synchronously in this same request either way —
+    // that's the signal the agent's catch-up query and Realtime subscription
+    // both watch for.
+    //
+    // after(() => runDownloadPipeline(id).catch((err) => console.error("download-pipeline: uncaught error", { id, message: err instanceof Error ? err.message : String(err) })));
 
     return NextResponse.json({ song: data[0] });
   } catch (err) {
