@@ -22,8 +22,22 @@ export default function QueuePanel() {
   // moderator clicked Advance could resolve afterwards with pre-advance
   // data and silently revert it.
   const requestId = useRef(0);
+  // True for the span of a drag-and-drop reorder in UpNextQueue — from the
+  // optimistic local update through the POST /api/admin/queue/reorder
+  // response. A ref (not state): fetchQueue reads it on every poll tick via
+  // a plain closure check, not as a render dependency — using state here
+  // would mean either re-subscribing the poll interval on every
+  // start/stop (drifting its cadence) or a stale closure missing the
+  // latest value.
+  const isReorderingRef = useRef(false);
 
   const fetchQueue = useCallback(async () => {
+    // A poll landing mid-drag (or while the reorder's own POST is still in
+    // flight) would otherwise overwrite the optimistic order UpNextQueue
+    // just applied with the stale pre-drag data — this is the "pause
+    // polling during a reorder" the brief asks for, done as a no-op guard
+    // rather than actually clearing/resetting the interval timer.
+    if (isReorderingRef.current) return;
     const thisRequestId = ++requestId.current;
     if (inFlight.current) return;
     inFlight.current = true;
@@ -63,6 +77,27 @@ export default function QueuePanel() {
     await fetchQueue();
   }
 
+  // Called synchronously by UpNextQueue the instant a drag drops — before
+  // its own optimistic setUpNext, so no in-flight poll can land afterwards
+  // and revert it (see fetchQueue's isReorderingRef guard above; bumping
+  // requestId here also invalidates a GET that was already in flight the
+  // moment the drag ended, same pattern as handleAdvance's own bump).
+  function handleReorderStart() {
+    isReorderingRef.current = true;
+    requestId.current += 1;
+  }
+
+  // success=true: the reorder actually persisted — force exactly one
+  // fetchQueue() to pick up submitted_at tiebreaks or anything else that
+  // changed server-side during the drag; its own requestId guard still
+  // applies, so this only ever wins if nothing newer has been asked for
+  // since. success=false: UpNextQueue already rolled its local state back
+  // itself, polling just needs to resume.
+  async function handleReorderEnd(success: boolean) {
+    isReorderingRef.current = false;
+    if (success) await fetchQueue();
+  }
+
   if (!loaded) {
     return (
       <section className="px-6 pt-6">
@@ -74,7 +109,12 @@ export default function QueuePanel() {
   return (
     <>
       <NowPlaying playing={playing} onAdvance={handleAdvance} />
-      <UpNextQueue upNext={upNext} />
+      <UpNextQueue
+        upNext={upNext}
+        setUpNext={setUpNext}
+        onReorderStart={handleReorderStart}
+        onReorderEnd={handleReorderEnd}
+      />
     </>
   );
 }

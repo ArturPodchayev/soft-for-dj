@@ -1,0 +1,6 @@
+# Local Supabase CLI cache (created by `npx supabase --version`/CLI
+# commands) — this project isn't CLI-linked (no config.toml, no
+# `supabase link` run — migrations are applied by hand via the Supabase
+# Dashboard SQL Editor, see each migration file's own docblock), so this
+# directory is never anything but throwaway local cache.
+.temp
