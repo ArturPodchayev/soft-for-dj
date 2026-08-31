@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, type Dispatch, type SetStateAction } from "react";
-import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
-import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { useEffect, useState } from "react";
+import { DndContext } from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { SongRequest } from "@/lib/songs";
+import { useReorderableQueue } from "@/lib/useReorderableQueue";
 import TrackQuickActions from "./TrackQuickActions";
 import DownloadStatusBadge from "./DownloadStatusBadge";
 
@@ -83,67 +84,38 @@ function SortableSongItem({
 
 export default function UpNextQueue({
   upNext,
-  setUpNext,
-  onReorderStart,
-  onReorderEnd,
+  onReorderSettled,
 }: {
   upNext: SongRequest[];
-  // The setter for QueuePanel's own upNext state — passed straight through
-  // (not wrapped in a callback prop) so this component can both apply the
-  // optimistic reorder AND roll it back to exactly what was on screen
-  // before the drag, from the same place, without QueuePanel needing to
-  // remember pre-drag state on its behalf.
-  setUpNext: Dispatch<SetStateAction<SongRequest[]>>;
-  // Pauses QueuePanel's poll for the duration of a drag + its in-flight
-  // POST — see QueuePanel.tsx's fetchQueue for how.
-  onReorderStart: () => void;
-  // success=true: the reorder was actually persisted — QueuePanel forces
-  // one fetchQueue() to pick up submitted_at tiebreaks/concurrent changes.
-  // success=false: this component already rolled the local state back
-  // itself; QueuePanel just needs to resume polling.
-  onReorderEnd: (success: boolean) => void;
+  // Forwarded straight into useReorderableQueue — QueuePanel.tsx uses this
+  // to force one extra poll after a successful reorder; this component
+  // doesn't need to know why, it just passes it through.
+  onReorderSettled?: (success: boolean) => void;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [dragError, setDragError] = useState<string | null>(null);
 
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const oldIndex = upNext.findIndex((song) => song.id === active.id);
-    const newIndex = upNext.findIndex((song) => song.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-
-    const previousOrder = upNext;
-    const reordered = arrayMove(upNext, oldIndex, newIndex);
-
-    // Optimistic: the drop is reflected on screen immediately, before the
-    // network round trip — the alternative (waiting for the next 3.5s poll)
-    // would make every drag look like it silently did nothing for up to
-    // 3.5 seconds.
-    setUpNext(reordered);
-    onReorderStart();
-
-    fetch("/api/admin/queue/reorder", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ songIds: reordered.map((song) => song.id) }),
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error(`reorder failed (${res.status})`);
-        onReorderEnd(true);
-      })
-      .catch(() => {
-        // The server rejected it (someone else played/rejected one of the
-        // dragged tracks mid-drag) or the request itself failed — roll back
-        // to exactly what was on screen before this drag rather than leave
-        // an order the server never actually applied.
-        setUpNext(previousOrder);
+  // All drag-and-drop mechanics (optimistic reorder, the POST, rollback on
+  // failure, guarding a poll from clobbering an in-flight drag) live in
+  // this one shared hook — see lib/useReorderableQueue.ts's docblock. This
+  // component only adds its own error-toast text on failure and forwards
+  // the outcome to whatever the caller passed in.
+  const { items, syncItems, dndContextProps } = useReorderableQueue(upNext, {
+    onReorderSettled: (success) => {
+      if (!success) {
         setDragError("Не удалось сохранить порядок — попробуйте ещё раз.");
         window.setTimeout(() => setDragError(null), 3000);
-        onReorderEnd(false);
-      });
-  }
+      }
+      onReorderSettled?.(success);
+    },
+  });
+
+  // Keeps the hook's own `items` in sync with whatever QueuePanel's poll
+  // last read — syncItems is a no-op while a drag/reorder is in flight (see
+  // the hook), so this can never fight the optimistic order.
+  useEffect(() => {
+    syncItems(upNext);
+  }, [upNext, syncItems]);
 
   return (
     <section className="px-6 pt-6">
@@ -157,17 +129,17 @@ export default function UpNextQueue({
       </div>
 
       <div className="rounded-3xl bg-brand-surface/95 p-2 shadow-md">
-        {upNext.length === 0 ? (
+        {items.length === 0 ? (
           <p className="px-4 py-4 text-sm text-brand-surface-fg/60">Очередь пуста.</p>
         ) : (
           // No explicit `sensors` prop — dnd-kit's own default (pointer +
           // keyboard) already covers both mouse and touch, and this
           // moderator device may not even have a touchscreen (per the
           // brief); nothing here needs tuning against that default.
-          <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={upNext.map((song) => song.id)} strategy={verticalListSortingStrategy}>
+          <DndContext {...dndContextProps}>
+            <SortableContext items={items.map((song) => song.id)} strategy={verticalListSortingStrategy}>
               <ul className="divide-y divide-brand-surface-fg/10">
-                {upNext.map((song) => {
+                {items.map((song) => {
                   // Shown expanded by default (not behind "⋯") once the
                   // pipeline itself flags a row for review — this is exactly
                   // when the moderator needs the manual Hitmo/Sefon fallback

@@ -6,6 +6,7 @@ import type { DisplayQueue } from "@/lib/displayQueue";
 import { useRealtimeDisplayQueue } from "@/lib/useRealtimeDisplayQueue";
 import { useVerifiedThumbnailUrl } from "@/lib/useVerifiedThumbnail";
 import { getSongThumbnailUrl } from "@/lib/albumArt";
+import DjViewQueue from "./DjViewQueue";
 
 // Upper bound on how long "Переключаем…" stays disabled after a tap, in
 // case Realtime never delivers a confirming update (a dropped WebSocket,
@@ -195,6 +196,12 @@ export default function DjView({ initialData }: { initialData: DisplayQueue }) {
       >
         {advancing ? "Переключаем…" : data.next ? "Переключить" : "Очередь пуста"}
       </button>
+
+      {/* Below the advance button, deliberately — that button is the one
+          thing this screen needs to stay first-visible and easy to tap
+          one-handed next to the controller; the full reorderable queue is
+          secondary, scrolled to. */}
+      <DjViewQueue />
     </div>
   );
 }
